@@ -4,10 +4,10 @@ import pymongo          # 1st vs to mongodb
 import psycopg2         # 2nd vs to mongodb to postgres sql
 import pandas as pd     # 3rd vs to mongodb to postgres sql create table frame
 import streamlit as st
-
+import webbrowser
 
 def api_id():
-    
+
     api_key = 'AIzaSyCN8s8FW1Ty1E9-rHM7JCRqOOCbYGVRM7I'
     import googleapiclient.discovery
     api_service_name = "youtube"
@@ -25,17 +25,20 @@ def channelinfo(channelid):
         id=channelid
     )
     ch_namedata =request.execute()
+    if 'items' in ch_namedata and len(ch_namedata['items']) > 0:
+        ch_details = {
+            'channel_name' : ch_namedata['items'][0]['snippet']['title'],
+            'channel_id' : ch_namedata['items'][0]['id'],
+            'channel_subscriberCount' : ch_namedata['items'][0]['statistics']['subscriberCount'],
+            'channel_view' : ch_namedata['items'][0]['statistics']['viewCount'],
+            'channel_video' : ch_namedata['items'][0]['statistics']['videoCount'],
+            'channel_description' : ch_namedata['items'][0]['snippet']['description'],
+            'channel_playlists' : ch_namedata['items'][0]['contentDetails']['relatedPlaylists']['uploads']}
 
-    ch_details = {
-        'channel_name' : ch_namedata['items'][0]['snippet']['title'],
-        'channel_id' : ch_namedata['items'][0]['id'],
-        'channel_subscriberCount' : ch_namedata['items'][0]['statistics']['subscriberCount'],
-        'channel_view' : ch_namedata['items'][0]['statistics']['viewCount'],
-        'channel_video' : ch_namedata['items'][0]['statistics']['videoCount'],
-        'channel_description' : ch_namedata['items'][0]['snippet']['description'],
-        'channel_playlists' : ch_namedata['items'][0]['contentDetails']['relatedPlaylists']['uploads']}
+        return ch_details
+    else:
+        return {'error': 'No channel data found'}
         
-    return ch_details
 
 def collect_video_ids(channel_id):
     total_videos=[]
@@ -58,7 +61,7 @@ def collect_video_ids(channel_id):
         total_videos.append(videoidresponse['items'][i]['snippet']['resourceId']['videoId'])
     next_Page_Token=videoidresponse.get('nextPageToken')
 
-    
+
     return total_videos        
 
 #get video information
@@ -113,7 +116,7 @@ def collect_commentdetails(total_videos):
                                                         comment_text=item['snippet']['topLevelComment']['snippet']['textDisplay'],
                                                         comment_author=item['snippet']['topLevelComment']['snippet']['authorDisplayName'],
                                                         comment_published_date=item['snippet']['topLevelComment']['snippet']['publishedAt'])
-                
+
         commentdata_list.append(comment_data)
 
     return commentdata_list
@@ -123,7 +126,7 @@ def collect_playlist_details(channel_id):
     nextPageToken=None
     collect_playlistdetails=[]
 
- 
+
     request5 = youtube.playlists().list(
                 part = 'snippet,contentDetails',
                 channelId = channel_id,
@@ -137,11 +140,11 @@ def collect_playlist_details(channel_id):
                             playlist_id=item['id'],
                             playlist_name=item['snippet']['channelTitle'],
                             published_at=item['snippet']['publishedAt'])
-        
+
         collect_playlistdetails.append(playlist_data)
 
     nextPageToken=playlist_response.get('nextPageToken')
-    
+
     return collect_playlistdetails
     
 
@@ -150,17 +153,17 @@ mongodbcx=pymongo.MongoClient("mongodb+srv://shibu266277:admin123@shibu.oxmwtfe.
 db=mongodbcx["YouTube1st_Project"]
 
 
-def channel_data(ytchannel_id):
-    ytch_details=channelinfo(ytchannel_id)
-    ytpl_details=collect_playlist_details(ytchannel_id)
-    ytvid_ids=collect_video_ids(ytchannel_id)
+def channel_data(channel_id):
+    ytch_details=channelinfo(channel_id)
+    ytpl_details=collect_playlist_details(channel_id)
+    ytvid_ids=collect_video_ids(channel_id)
     ytvid_details=collect_video_deatails(ytvid_ids)
     comm_details=collect_commentdetails(ytvid_ids)
 
     collect=db["channel_details"]
     collect.insert_one({"channel_collection":ytch_details,"playlist_collection":ytpl_details,"video_collection":ytvid_details,
                         "command_collection":comm_details})
-    
+
     return "data_files insert successful"
 
 
@@ -212,7 +215,7 @@ def channel_table():
                                             channel_description,
                                             channel_playlists)
                                             values(%s,%s,%s,%s,%s,%s,%s)'''
-        
+
         val=(
             row['channel_name'],
             row['channel_id'],
@@ -221,17 +224,16 @@ def channel_table():
             row['channel_total_video'],
             row['channel_description'],
             row['channel_playlists'])
-        
+
         try:
             cursor.execute(insert_query,val)
             mdb.commit()
 
             print("data inserted successfully!")
-        
+
         except Exception as e:
             print(f"Error: {e}")
             mdb.rollback()  
-
 
 #get playlists_collection from mongodb
 
@@ -281,7 +283,7 @@ def playlist_table():
         mdb.commit()
 
 
-        
+
 def video_table():
     mdb=psycopg2.connect(host="localhost",
                             user="postgres",
@@ -338,7 +340,7 @@ def video_table():
                                     thumbnail,
                                     caption_status)
                                     values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)'''
-        
+
         val=(
                 row['channel_Name'],
                 row['channel_Id'],
@@ -485,24 +487,43 @@ def comment_tables_view():
 
 # streamlit application code
 
-with st.sidebar:
-    st.title(":orange[YOUTUBE DATA HARVESTING AND WAREHOUSING]")
-    st.header(":green[SKILL EFFORT GIVEN]") 
-    st.caption("Data Infromation")
-    st.caption("Python Coding")
-    st.caption("MonogoDB Data Lake")
-    st.caption("Data Tranfer Using by Api Key")
-    st.caption("Channels Data Using MongoDB With PostGres SQL")
-    st.caption("Data Information Present With Streamlit")
-    channel_id=st.text_input(":blue[ENTER THE YOUTUBE CHANNEL ID]")
+# Function to open YouTube webpage
+def open_youtube():
+    webbrowser.open_new_tab("https://www.youtube.com/")
+st.sidebar.header(":blue[🎉Youtube Data Harvesting And Warehousing🎉]")
 
-if st.button("COLLECT DATA TO DATALAKE"):
+# YouTube logo image.svg
+youtube_logo_url = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOEAAADgCAMAAADCMfHtAAAAolBMVEX/////AACSkpLAwMDx8fGZmZnPz8+UlJT/7e2QkJD/dnb/RET/NzfLy8vr6+v09PT/kpKmpqa2tragoKDZ2dn/W1uvr6/h4eG9vb2urq7/n5//mpr/9fXe3t7T09P/1tb/ycn/vLz/sLD/p6f/bGz/h4f/5OT/UVH/Skr/e3v/0dH/Ghr/3t7/jY3/trb/goL/JSX/ZGT/Vlb/MDD/EhL/w8PCLtHcAAAImklEQVR4nO2dZ3vaPBuGeWSEMMR2PMA4bMiCJmT07f//a6+MQ5lGsnUrGs31pT2SlOqMpHtpNRrcCvzEG0RZGGN1isMsGniJH/A3m1O+18dIJ+G+58PhjSOCCEEozpzJOPX9pjr5fjqeOFmM8gaRaAyB5w/oRyESeinEp4Ep9cJtuwaiPTkO3fxj9KLbKc1/+W4o0pEJpoMh0hOvUBrR0Rondf81He24BdogGWpRExjX6YUgQwRPwNsjQxNMUFbZf7Ro73symiNFHp1N1XqDdiCK4L2qPAV9VKkbU0JI3dmrSgltM/ds9FwSmtSBhYKQuJzzKkLIkdsYSXLo1OL5ORormDZCd0po7MX+qbjCcNZO1IDErJ+hgM3vaIskNZmIMcHm2ZhDBfj6QA0JMRuQIhKSlX+XhrGAaaUi+TRZKPteC7nmGpm9UoRKIjjfLfuOYZog9/JQxOW9a5gigi9/melKjFF8qbNSF5nsCI/VvGRRMNI/nedX63ycOjwRnUGKyUn2EJSZH1NFXcZx7BJZY0d3yo6JmqfE5osiHVrOiAyUNUWW+oedSGehbV24DdH2UI51szBXdmBOCbIh4j5VisjurwmyJ147FP5bcMpOvaMlcna5cEBceyLSQzXdr4pFguwK2PYKv4ZpZNASTDV5XxViguwKSffyC2vq742qdSo6b4KuVN8MV7atPA2snYb5RMzj7dDKgKbQeOsmsEX1mVM1Ec7zCnsNDTU11Of7lgalhWJqTMeor7oZEpWhMY3ZbMwNd4po3DZB9hUw9hpQh+gZui2BTw519o7FDr+x7T/Hqmr+qVo/hMbrh9B8AROO2o8v0/VsPp8vlnfD4e3t7euq0+nc954+e73ec/dQ+Vd6vQ/67c7qlf7kcDhcLpeb2Z/Zej19eWy3RyBNEiCkNLP54u51df/x9Pt//0nS+03vfvU6XG7m63rI9QhH84fnd1lMV/TrZrVofwPhoqsAbq+bpWTCO6V4haowViVcq4Yr9D6VRXirGu2v7uQQ3qvmOtBKBmFPNdWR7uEJV6qZTnQLTThXTXSmNTChap5zvcMSDlXzXNAClFA1zSX9giRcqKa5qD+AhGpj0TL14AgfVbOUiJ1Q8RLqEG9fEtvW8BLqOUh5hikvoWqSUkERzlSDlIqZRnES6pM1nYqZRXESPqkGKRUzw+AklFZKE9YNDOFINccVsTwiH6Gu/j4Xq7rIR6ivKWUniXyEc9UYVzQHIdQ1ZsvFqp3yEb6pxriiVxBCnaqIp+qAED6rxrgiVuzNRyi2zjSVOgRYLp+PUKwN7caLzKhPC8JGYypvoEMQCgZtRdQx+w0DdCZG2MZFKBi07eKquZxlY0bYxkX4AtWEhYwc5QWAcCrWhMNf8hKG6lAQhIKB9/EwAl8dYITeXIRzsSacTJTRKwTXXoy6NxehYEX/zBSMQOPcDQCh4OS5YOzagGEOI7ngIhRMni6a88cPGD5mtU0ZIbXQQKEcBKGg+St1yWuQtQIIQsF68JWgAyKUY2xY4CJ8kEZIPdEvUUJGks9FKGjcGYGj6OryGwBhRyqhqCVjbI7SglBspjMKNZoQNkb157ohhJSx7v9iDCENc+qFcgYR1jTaBhFu6rlGYwhru35DCGc3tT/eCEKhENwAQsE0SnvCF9Hd45oTAqT6EISCW9jLCduCv7utICJvSdlTG2bzP0T2JCUDFoi1j/UAQCijigG3Uw6iigFfiYLc3DEEIISuJsIuz+hXL90AL7FBEEJW9cVra6eCqOrDrcz8kbDUzdjM/q2razA17lMxNrZ94wqprO0YMwBCiFVu4QC7VIy97N+0UwFuLe1cEOv4grtNRiABdqkeAQgFdwxJ3tkIsWNI3xMzuRht/yEsBB6HAIp1GJiPUNeTa7meQQh13gXNOhZk/k52RhGDk1DHk+o7sQ6v/ZwoKaTzqaAZCKHOJ7sYQdvP6byd9D1hybw4wvhTsp9AhPqedGZUSy04rT4DItTX1LBabvytEU9ghLqeImXfvmf67S3sXRCG38DDSg6rEOp5ixIr7K5CqGethqPdZt9mxnM9pNE30vFcZlaFcKMa6EwzYMKGxLWHWmJVaKoTanYsn5lV1CBsfKqmOhDHZXQ1CBvAhyMFxHsFbeWbkqeyzpxXFIerr0lITaqKq8pPxNjoJUjYaKzVXrf7+67S7fM179V/WTx0VfTl786CVT0EIiz0ONssbx86H0/dd4kvBzx93K9ev/vlgBKNiscf1vnzD5vlMn//IX8A4vZt+wAE1Wf35kzdbvf5qfdx33l7yF+AuFsu5rP1NH/+QfnrD4boh9B8/RCar4LQ9lfJ7H9ZrmX964D2v/Bo9yudfTT+B15atfy1XBT8Ay8e/wOvVtv/8rj9r8f7FpsaQk3p/g8Lteu8yNqJ6H3Fa4m1Pj+mMVuugFjqEZuIBMXfMmJnAuWQnZdItp7fPuGvQdrIramNYU164AYdYmMGdTj5msi1z9b47qEB7RP7Ev3oaGD6yDqH0UTHoVrfupmYnRDRmWhXcJqejUqH2BW6xedRDCY2xd8eOQ9ixjYZG2pmxudf7Vs0TuPLhhNb4xSjC2M0V+puqxrma1LqGDxkRQROHUVpT0WEmO8VfUKurKaFZJcVG6uAkKvV0ZhgsxEDTMLrPxETYrJbbBK2z6OI5pqblAMwn4v78oZhShBriBbqE0OX9geINwd0XBKaZ2+CmLjcVdExMW+k0hFKLkTbZQroZOyb1I1BH1Uddx4iBm0lovOq+vJSM0QEm7HlrUUnVVjHi49jyqh/4u9hguIKM/BICabTN9I5AEhpsoCwiFUch3SEY0fPjMN3aA+4Yd3++/sxA4wQIpmnF6XvZYS2Cw9AmpVGFJJ+XpwNWpMk9Zvq5KfJpDXI4m17MOQE8lv9vCv1Ee634AdV4CfeIMrCGKtTHGbRwEv8Cs79/8XdtyVR1B2FAAAAAElFTkSuQmCC"
+st.sidebar.image(youtube_logo_url, width=50)
+
+
+
+# Button to open YouTube webpage
+if st.sidebar.button("Open YouTube"):
+    open_youtube()
+    
+# Streamlit application code
+with st.sidebar:
+    
+    st.balloons()
+    channel_id = st.text_input(":blue[ENTER CHANNEL ID]")
+    st.subheader(":orange[💻SKILL EFFORT GIVEN]") 
+    st.caption(":blue[Data Infromation]")
+    st.caption(":blue[Python Coding]")
+    st.caption(":blue[MonogoDB Data Lake]")
+    st.caption(":blue[Data Tranfer Using by Api Key]")
+    st.caption(":blue[Channels Data Using MongoDB With PostGres SQL]")
+    st.caption(":blue[Data Information Present With Streamlit]") 
+    
+       
+
+if st.button("📊 COLLECT DATA TO DATALAKE"):
     ch_idlist=[]
     db=mongodbcx["YouTube1st_Project"]
     collect=db["channel_details"]
     for ch_db in collect.find({},{"_id": 0,"channel_collection":1}):
         ch_idlist.append(ch_db['channel_collection']['channel_id'])
-    
+
     if channel_id in ch_idlist:
         st.write("GIVEN CHANNEL ID IS ALREADY EXISTS!!!")
 
@@ -510,9 +531,16 @@ if st.button("COLLECT DATA TO DATALAKE"):
         insert = channel_data(channel_id)
         st.success(insert)
 
-if st.button("CREATE POSTGRES SQL"):
+if st.button("📊 CREATE POSTGRES SQL"):
     result = all_tables()
     st.success(result)
+
+
+selected_channel = st.selectbox("Choose A Channel", 
+                                        ("RIZWANA'S KITCHEN", "RIHANNA", "BILLIE EILISH", 
+                                         "JUST LAUGH", "RITHU ROCK", "INDIAN ACTORS DATA", 
+                                         "HOW TO YOUTUBE", "SPJ KIDS TV", "UNITY DECK", 
+                                         "KIDS ROMI WORLD"))
 
 
 show_table=st.radio("CHOOSE THE TABLE FOR VIEW",("CHANNEL","PLAYLIST","VIDEO","COMMENT"))
@@ -629,3 +657,6 @@ if Question=="10.Which videos have the highest number of comments, and what are 
     tab10=cursor.fetchall()
     df10=pd.DataFrame(tab10, columns=["Channel Names", "Video Names", "No.Of Highest Comments"])
     st.write(df10)
+
+st.slider(":red[RATING FOR MY PROJECT]", 0, 100)
+st.select_slider(":green[FEEDBACK]",["IMPORVE","SUPER","EXCELLENT"])
