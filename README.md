@@ -3,3 +3,10 @@ involve the collection, storage, and analysis of vast amounts of data generated 
 Here's an overview of the process.
 
 
+Data Collection: YouTube collects extensive data from its users, including but not limited to:
+
+User interactions: Views, likes, dislikes, comments, shares, subscriptions.
+User demographics: Age, gender, location.
+Device information: Type of device used, operating system, browser.
+Engagement metrics: Watch time, session duration, click-through rates.
+
